@@ -53,6 +53,7 @@ func ReadString(input io.Reader, length []byte) (string, error) {
 		return "", err
 	}
 
+	// ESM strings are null terminated, we don't need the null
 	return string(sb[:len(sb)-1]), nil
 }
 
@@ -87,11 +88,12 @@ func ReadItems(input io.Reader) (map[string][]byte, error) {
 
 type HeaderRecord struct {
 	RecordType
-	MasterFile  bool
-	RawRecord   []byte
-	FileVersion int
-	Author      string
-	OtherItems  map[string][]byte
+	IsMasterFile bool
+	MasterFile   string
+	RawRecord    []byte
+	FileVersion  int
+	Author       string
+	OtherItems   map[string][]byte
 }
 
 type GroupRecord struct {
@@ -152,10 +154,10 @@ func DecodeHeader(input io.Reader) (*HeaderRecord, error) {
 	// At byte 20 we get a notice as to whether this file has a master file
 	hr := &HeaderRecord{RecordType: HEADER}
 	if prefix[20] == 0x02 {
-		hr.MasterFile = true
+		hr.IsMasterFile = true
 	}
 	if prefix[20] == 0x0f {
-		hr.MasterFile = false
+		hr.IsMasterFile = false
 	}
 
 	// the four bytes after TES4 tells us how many bytes the rest of the hedr is
@@ -209,11 +211,15 @@ func DecodeHeader(input io.Reader) (*HeaderRecord, error) {
 	hr.Author = s
 
 	// master files have no more fields at this point
-	if hr.MasterFile {
+	if hr.IsMasterFile {
 		return hr, nil
 	}
 
 	items, _ := ReadItems(headInput)
+	if i, ok := items["MAST"]; ok {
+		hr.MasterFile = string(i[:len(i)-1])
+		delete(items, "MAST")
+	}
 	hr.OtherItems = items
 
 	return hr, nil

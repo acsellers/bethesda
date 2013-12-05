@@ -15,5 +15,12 @@ func TestHeader(t *testing.T) {
 		test.AreEqual(ef.Header.Author, "jfader")
 		test.IsFalse(ef.Header.IsMasterFile)
 		test.AreEqual(ef.Header.MasterFile, "FalloutNV.esm")
+
+		f, e = os.Open("header_master.esm")
+		test.NoError(e)
+		ef, e = DecodeESM(f)
+		test.NoError(e)
+		test.AreEqual(ef.Header.Author, "ipely")
+		test.IsTrue(ef.Header.IsMasterFile)
 	})
 }

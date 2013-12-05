@@ -10,6 +10,8 @@ type Decoder func(buffer []byte) Record
 
 type Record interface {
 	Type() RecordType
+	String() string
+	ParseSubrecords([]byte)
 }
 
 type RecordType int
@@ -17,12 +19,34 @@ type RecordType int
 func (t RecordType) Type() RecordType {
 	return t
 }
+func (t RecordType) ParseSubrecords(b []byte) {
+	panic("NONONO")
+}
 
 const (
 	HEADER RecordType = iota
+	GROUP
+	GAME_SETTING
+	TEXTURE_SET
+	MENU_ICON
+	NPC_
+	GLOBAL
+	CHARACTER_CLASS
+	FACTION
+	RACE
+	SOUND
+	MAGIC_EFFECT
+	ENCHANTMENT
+	UNKNOWN
 )
 
 var RecordDecoders = make(map[string]Decoder)
+var ComplexDecoding = map[string]bool{
+//"DIAL": true, // NPC_ can have embedded GRUP records, not ready for this yet
+//"CELL": true, // Skip for simplicity
+//"WRLD": true, // Ditto
+}
+var RecordTypes = make(map[string]RecordType)
 
 // Decode a 4 byte length in the TES4 Length format
 func Decode4LE(b []byte) int {
@@ -33,7 +57,9 @@ func Decode4LE(b []byte) int {
 func Decode2LE(b []byte) int {
 	return int(b[1])<<8 + int(b[0])
 }
-
+func ReadStringBuffer(buf []byte, length []byte) (string, error) {
+	return ReadString(bytes.NewBuffer(buf), length)
+}
 func ReadString(input io.Reader, length []byte) (string, error) {
 	var sl int
 	if len(length) == 2 {
@@ -98,6 +124,7 @@ type HeaderRecord struct {
 
 type GroupRecord struct {
 	RecordType
+	GroupName string
 	GroupType RecordType
 	Records   []Record
 }
@@ -215,6 +242,7 @@ func DecodeHeader(input io.Reader) (*HeaderRecord, error) {
 		return hr, nil
 	}
 
+	// read some more items, saving those that we care about
 	items, _ := ReadItems(headInput)
 	if i, ok := items["MAST"]; ok {
 		hr.MasterFile = string(i[:len(i)-1])
@@ -236,7 +264,59 @@ func DecodeGroup(input io.Reader) (GroupRecord, error) {
 	    4 bytes 01000000 on master, zero otherwise
 	  a number of child records
 	*/
-	panic("UNIMPLEMENTED")
+	g := GroupRecord{RecordType: GROUP}
+	gr := make([]byte, 24)
+	n, err := input.Read(gr)
+	if n < 24 || err == io.EOF {
+		return g, io.EOF
+	}
+	if string(gr[0:4]) != "GRUP" {
+		return g, fmt.Errorf("GRUP signifier not found")
+	}
+	g.GroupName = string(gr[8:12])
+	g.GroupType = RecordTypes[g.GroupName]
+
+	gl := Decode4LE(gr[4:8])
+	gb := make([]byte, gl-24)
+	n, err = input.Read(gb)
+	if n < gl-24 {
+		return g, fmt.Errorf("Incomplete group section")
+	}
+	if err != nil && err != io.EOF {
+		return g, err
+	}
+	if d, ok := RecordDecoders[g.GroupName]; ok {
+		for len(gb) > 0 {
+			rl := Decode4LE(gb[4:8]) + 24
+			if string(gb[0:4]) == "GRUP" {
+				rl -= 24
+			}
+			r := d(gb[:rl])
+			gb = gb[rl:]
+
+			g.Records = append(g.Records, r)
+		}
+		//} else if _, ok := SkipDecoding[g.GroupName]; ok {
+		//	fmt.Println("Skipping", g.GroupName, "Section")
+	} else {
+		fmt.Println("Loading fake decoder for", g.GroupName)
+		d := NewFakeDecoder(g.GroupName)
+		RecordDecoders[g.GroupName] = d
+
+		for len(gb) > 0 {
+			rl := Decode4LE(gb[4:8]) + 24
+			if string(gb[0:4]) == "GRUP" {
+				rl -= 24
+			}
+
+			fmt.Println(rl, len(gb))
+			r := d(gb[:rl])
+			gb = gb[rl:]
+			g.Records = append(g.Records, r)
+		}
+	}
+
+	return g, nil
 }
 
 type ESMFile struct {
@@ -251,7 +331,6 @@ func DecodeESM(input io.Reader) (*ESMFile, error) {
 		return nil, err
 	}
 	ef.Header = h
-	return ef, nil
 
 	group, err := DecodeGroup(input)
 	for err == nil {
@@ -260,8 +339,8 @@ func DecodeESM(input io.Reader) (*ESMFile, error) {
 	}
 
 	if err != io.EOF {
-		return nil, err
+		return ef, err
 	}
 
-	return nil, err
+	return ef, nil
 }

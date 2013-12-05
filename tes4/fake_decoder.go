@@ -52,7 +52,6 @@ func (fd *FakeDecoder) Decode(buf []byte) Record {
 		fr.RecordName = "CELL"
 		return fr
 	}
-	fmt.Printf("%x\n", fr.FormID)
 	offset := 0
 	for len(buf2) > 0 {
 		// did someone fill in a record with 0's
@@ -69,9 +68,6 @@ func (fd *FakeDecoder) Decode(buf []byte) Record {
 			fr.EditorID = string(buf2[6 : 6+l-1])
 		} else if _, ok := fd.Attributes[string(buf2[0:4])]; !ok {
 			fd.Attributes[string(buf2[0:4])] = true
-		}
-		if len(buf2) < 6+l {
-			fmt.Println("eee", l, string(buf2[0:4]))
 		}
 		buf2 = buf2[6+l:]
 	}

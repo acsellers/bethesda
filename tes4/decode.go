@@ -296,8 +296,6 @@ func DecodeGroup(input io.Reader) (GroupRecord, error) {
 
 			g.Records = append(g.Records, r)
 		}
-		//} else if _, ok := SkipDecoding[g.GroupName]; ok {
-		//	fmt.Println("Skipping", g.GroupName, "Section")
 	} else {
 		fmt.Println("Loading fake decoder for", g.GroupName)
 		d := NewFakeDecoder(g.GroupName)
@@ -309,7 +307,6 @@ func DecodeGroup(input io.Reader) (GroupRecord, error) {
 				rl -= 24
 			}
 
-			fmt.Println(rl, len(gb))
 			r := d(gb[:rl])
 			gb = gb[rl:]
 			g.Records = append(g.Records, r)
